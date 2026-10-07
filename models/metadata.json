@@ -1,0 +1,126 @@
+{
+  "model_type": "Calibrated Hybrid SVM (Approach C)",
+  "unsupervised_model_type": "Spherical K-Means (TF-IDF + SVD 40d + L2)",
+  "created_at": "2026-10-06T21:44:14Z",
+  "supervised_metrics": {
+    "test_accuracy": 0.9893,
+    "test_precision": 0.9901,
+    "test_recall": 0.9901,
+    "test_f1": 0.9901,
+    "test_roc_auc": 0.9995,
+    "confusion_matrix": [
+      [
+        425,
+        5
+      ],
+      [
+        5,
+        499
+      ]
+    ],
+    "train_samples": 8456,
+    "test_samples": 934
+  },
+  "decision_threshold": 0.5,
+  "uncertainty_zone": [
+    0.1,
+    0.85
+  ],
+  "stylometric_features": [
+    "excl_count",
+    "quest_presence",
+    "char_count",
+    "trigger_count",
+    "upper_ratio",
+    "has_num"
+  ],
+  "discriminative_stopwords_count": 43,
+  "cluster_topics": {
+    "0": "Segredos & Estilo de Vida",
+    "1": "Ciência, Saúde & Mistérios",
+    "2": "Esportes & Competições",
+    "3": "Polícia & Casos Chocantes",
+    "4": "Urgência & Curiosidade Sensacionalista",
+    "5": "Política & Escândalos"
+  },
+  "cluster_details": {
+    "0": {
+      "topic": "Segredos & Estilo de Vida",
+      "keywords": [
+        "descubra",
+        "segredo",
+        "descubra segredo",
+        "podem",
+        "mundo",
+        "trás",
+        "alimentos",
+        "destinos"
+      ]
+    },
+    "1": {
+      "topic": "Ciência, Saúde & Mistérios",
+      "keywords": [
+        "pode",
+        "cientistas",
+        "vida",
+        "descubra",
+        "descoberta",
+        "saúde",
+        "ser",
+        "pode ser"
+      ]
+    },
+    "2": {
+      "topic": "Esportes & Competições",
+      "keywords": [
+        "time",
+        "futebol",
+        "jogador",
+        "campeonato",
+        "estádio",
+        "estrela",
+        "equipe",
+        "torcida"
+      ]
+    },
+    "3": {
+      "topic": "Polícia & Casos Chocantes",
+      "keywords": [
+        "veja",
+        "polícia",
+        "crime",
+        "cidade",
+        "detalhes",
+        "operação",
+        "brutal",
+        "finalmente"
+      ]
+    },
+    "4": {
+      "topic": "Urgência & Curiosidade Sensacionalista",
+      "keywords": [
+        "vai",
+        "vai acreditar",
+        "acreditar",
+        "vai mudar",
+        "mudar",
+        "descubra",
+        "incrível",
+        "vai revolucionar"
+      ]
+    },
+    "5": {
+      "topic": "Política & Escândalos",
+      "keywords": [
+        "saiba",
+        "novo",
+        "escândalo",
+        "governo",
+        "promete",
+        "surpreende",
+        "veja",
+        "conheça"
+      ]
+    }
+  }
+}
