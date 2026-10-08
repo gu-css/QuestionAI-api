@@ -8,6 +8,7 @@ Enforces strict architectural decoupling between:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 from collections import OrderedDict
@@ -31,6 +32,9 @@ from src.features import (
     PT_STOPWORDS,
     normalize_text,
 )
+
+logger = logging.getLogger(__name__)
+
 
 # Human-readable labels for the 6 clickbait archetypes discovered in the corpus
 DEFAULT_CLUSTER_TOPICS: dict[int, str] = {
@@ -414,6 +418,113 @@ class UnsupervisedCategorizer(BaseEstimator):
         }
 
 
+class HDBSCANCategorizer(BaseEstimator):
+    """
+    Independent bait categorizer using semantic embeddings + UMAP + HDBSCAN.
+
+    Pipeline (mirrors the research notebook): sentence-transformer embeddings
+    (paraphrase-multilingual-MiniLM-L12-v2, 384d) -> UMAP (10d, cosine) -> HDBSCAN.
+    Titles that HDBSCAN labels as noise (-1) map to ``bait_type=None`` (uncertain).
+
+    Requires optional dependencies: sentence-transformers, umap-learn, hdbscan.
+    """
+
+    LM_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
+
+    def __init__(
+        self,
+        n_umap: int = 10,
+        min_samples: int = 3,
+        min_cluster_size: int = 60,
+        random_state: int = 42,
+    ) -> None:
+        self.n_umap = n_umap
+        self.min_samples = min_samples
+        self.min_cluster_size = min_cluster_size
+        self.random_state = random_state
+
+        self.lm = None
+        self.reducer_ = None
+        self.clusterer_ = None
+        self.cluster_topics: dict[int, str] = {}
+        self.cluster_keywords: dict[int, list[str]] = {}
+
+    def fit(self, texts: Sequence[str], y: Any = None) -> "HDBSCANCategorizer":
+        from sentence_transformers import SentenceTransformer
+        import umap
+        import hdbscan
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
+        texts = list(texts)
+        clean_texts = [normalize_text(t) for t in texts]
+
+        self.lm = SentenceTransformer(self.LM_NAME)
+        emb = self.lm.encode(texts, normalize_embeddings=True, show_progress_bar=True)
+
+        self.reducer_ = umap.UMAP(
+            n_neighbors=15,
+            n_components=self.n_umap,
+            metric="cosine",
+            random_state=self.random_state,
+        )
+        Xr = self.reducer_.fit_transform(emb)
+
+        self.clusterer_ = hdbscan.HDBSCAN(
+            min_cluster_size=self.min_cluster_size,
+            min_samples=self.min_samples,
+            prediction_data=True,
+        )
+        self.labels_ = self.clusterer_.fit_predict(Xr)
+
+        # Keywords and topics per cluster via TF-IDF (like the notebook topic tables)
+        vec = TfidfVectorizer(ngram_range=(1, 2), min_df=2, max_features=4000)
+        Xs = vec.fit_transform(clean_texts)
+        feature_names = np.array(vec.get_feature_names_out())
+
+        self.cluster_keywords = {}
+        self.cluster_topics = {}
+        used_topics: set[str] = set()
+        cluster_ids = sorted({int(c) for c in self.labels_} - {-1})
+        for c in cluster_ids:
+            mask = self.labels_ == c
+            top_idx = np.asarray(Xs[mask].mean(axis=0)).ravel().argsort()[::-1][:8]
+            kws = list(feature_names[top_idx])
+            self.cluster_keywords[c] = kws
+            topic_name = _match_topic_name(kws, used_topics)
+            self.cluster_topics[c] = topic_name
+            used_topics.add(topic_name)
+
+        return self
+
+    def predict(self, texts: Union[str, Sequence[str]]) -> np.ndarray:
+        import hdbscan
+        if isinstance(texts, str):
+            texts = [texts]
+        emb = self.lm.encode(list(texts), normalize_embeddings=True)
+        Xr = self.reducer_.transform(emb)
+        labels, _ = hdbscan.approximate_predict(self.clusterer_, Xr)
+        return np.asarray(labels)
+
+    def categorize(self, text: str) -> dict[str, Any]:
+        """
+        Categorizes a clickbait headline into its archetype and top keywords.
+        Returns ``bait_type=None`` when HDBSCAN labels the headline as noise (-1).
+        """
+        cluster_id = int(self.predict([text])[0])
+        if cluster_id < 0:
+            return {
+                "cluster_id": -1,
+                "bait_type": None,
+                "keywords": [],
+            }
+        topic_name = self.cluster_topics.get(cluster_id, "Sensacionalismo Geral")
+        keywords = self.cluster_keywords.get(cluster_id, [])
+        return {
+            "cluster_id": cluster_id,
+            "bait_type": topic_name,
+            "keywords": keywords,
+        }
+
 
 ARCHETYPE_MAPPING = {
     "Segredos & Estilo de Vida": "Gatilho de Curiosidade",
@@ -443,12 +554,29 @@ class ClickbaitDetectionSystem:
         self._cache_size = cache_size
         self._cache_lock = threading.Lock()
 
+    @staticmethod
+    def _try_load_hdbscan(models_dir: str) -> Optional[Any]:
+        """Loads the HDBSCAN categorizer artifact if present, else returns None."""
+        hdb_path = os.path.join(models_dir, "unsupervised_hdbscan.joblib")
+        if not os.path.exists(hdb_path):
+            return None
+        try:
+            categorizer = joblib.load(hdb_path)
+            topics_path = os.path.join(models_dir, "cluster_topics_hdbscan.json")
+            if (not getattr(categorizer, "cluster_topics", None)) and os.path.exists(topics_path):
+                with open(topics_path, "r", encoding="utf-8") as f:
+                    categorizer.cluster_topics = {int(k): str(v) for k, v in json.load(f).items()}
+            return categorizer
+        except Exception:
+            return None
+
     @classmethod
     def load(
         cls,
         models_dir: str = "models",
         unsup_artifacts_dir: Optional[str] = None,
         load_unsupervised: bool = True,
+        categorizer: str = "kmeans",
     ) -> "ClickbaitDetectionSystem":
         sup_path = os.path.join(models_dir, "supervised_model.joblib")
         supervised_predictor = None
@@ -457,6 +585,12 @@ class ClickbaitDetectionSystem:
 
         unsupervised_categorizer = None
         if load_unsupervised:
+            if categorizer == "hdbscan":
+                unsupervised_categorizer = cls._try_load_hdbscan(models_dir)
+                if unsupervised_categorizer is not None:
+                    return cls(supervised=supervised_predictor, unsupervised=unsupervised_categorizer)
+                logger.warning("HDBSCAN categorizer unavailable; falling back to K-Means.")
+
             # Candidate paths for the unsupervised model artifact
             candidate_paths: list[str] = []
 
@@ -582,9 +716,12 @@ class ClickbaitDetectionSystem:
             "bait_type": None,
         }
 
-    def _resolve_bait_type(self, cluster_id: Any) -> str:
+    def _resolve_bait_type(self, cluster_id: Any) -> Optional[str]:
+        cid = int(cluster_id)
+        if cid < 0:
+            return None  # HDBSCAN noise -> uncertain (no forced archetype)
         topics = getattr(self.unsupervised, "cluster_topics", None) or {}
-        topic = topics.get(int(cluster_id), "Sensacionalismo Geral")
+        topic = topics.get(cid, "Sensacionalismo Geral")
         if topic in ARCHETYPE_MAPPING:
             topic = ARCHETYPE_MAPPING[topic]
         return topic

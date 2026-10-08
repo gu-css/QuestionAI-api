@@ -1,0 +1,7 @@
+# Optional dependencies for the HDBSCAN categorizer (Option A / UNSUPERVISED_MODEL=hdbscan).
+# Install separately only if you want the HDBSCAN backend:
+#     pip install -r requirements-hdbscan.txt
+sentence-transformers>=2.6.0
+umap-learn>=0.5.3
+hdbscan>=0.8.33
+torch>=2.0.0

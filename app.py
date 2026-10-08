@@ -28,9 +28,14 @@ MODELS_DIR = BASE_DIR / "models"
 
 # Eagerly load the system
 logger.info("Initializing Clickbait Detection System...")
+# Choose the unsupervised categorizer backend:
+#   UNSUPERVISED_MODEL=kmeans  (default) -> Spherical K-Means (6 archetypes)
+#   UNSUPERVISED_MODEL=hdbscan           -> HDBSCAN (embeddings + UMAP; supports noise)
+UNSUPERVISED_MODEL = os.environ.get("UNSUPERVISED_MODEL", "kmeans").strip().lower()
 system = ClickbaitDetectionSystem.load(
     models_dir=str(MODELS_DIR),
     unsup_artifacts_dir=str(MODELS_DIR),
+    categorizer=UNSUPERVISED_MODEL,
 )
 
 app = FastAPI(title="Clickbait Shield API")
