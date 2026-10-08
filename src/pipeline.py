@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, List, Optional, Sequence, Union
+import threading
+from collections import OrderedDict
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import joblib
 import numpy as np
 import pandas as pd
@@ -433,9 +435,13 @@ class ClickbaitDetectionSystem:
         self,
         supervised: Optional[SupervisedPredictor] = None,
         unsupervised: Optional[UnsupervisedCategorizer] = None,
+        cache_size: int = 2048,
     ) -> None:
         self.supervised = supervised
         self.unsupervised = unsupervised
+        self._cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+        self._cache_size = cache_size
+        self._cache_lock = threading.Lock()
 
     @classmethod
     def load(
@@ -549,14 +555,41 @@ class ClickbaitDetectionSystem:
 
         return cls(supervised=supervised_predictor, unsupervised=unsupervised_categorizer)
 
-    def predict(self, headline: str) -> dict[str, Any]:
-        """
-        Predicts whether a headline is clickbait and determines its bait category.
-        Gracefully handles absence or failure of the unsupervised model.
-        """
-        if self.supervised is None:
-            raise RuntimeError("Supervised model is not loaded in ClickbaitDetectionSystem.")
+    # --- Caching (per-process LRU, thread-safe) ----------------------------
+    def _cache_get(self, headline: str) -> Optional[Dict[str, Any]]:
+        with self._cache_lock:
+            if headline in self._cache:
+                self._cache.move_to_end(headline)
+                return self._cache[headline]
+            return None
 
+    def _cache_set(self, headline: str, result: Dict[str, Any]) -> None:
+        with self._cache_lock:
+            self._cache[headline] = result
+            self._cache.move_to_end(headline)
+            while len(self._cache) > self._cache_size:
+                self._cache.popitem(last=False)
+
+    @staticmethod
+    def _empty_result(headline: Any) -> Dict[str, Any]:
+        return {
+            "headline": headline if isinstance(headline, str) else str(headline or ""),
+            "is_clickbait": False,
+            "clickbait_status": "not_clickbait",
+            "probability": 0.0,
+            "confidence": 1.0,
+            "uncertain": False,
+            "bait_type": None,
+        }
+
+    def _resolve_bait_type(self, cluster_id: Any) -> str:
+        topics = getattr(self.unsupervised, "cluster_topics", None) or {}
+        topic = topics.get(int(cluster_id), "Sensacionalismo Geral")
+        if topic in ARCHETYPE_MAPPING:
+            topic = ARCHETYPE_MAPPING[topic]
+        return topic
+
+    def _predict_one(self, headline: str) -> Dict[str, Any]:
         sup_res = self.supervised.predict_single(headline)
         bait_type = None
 
@@ -569,8 +602,6 @@ class ClickbaitDetectionSystem:
                         bait_type = ARCHETYPE_MAPPING[bait_type]
                 except Exception:
                     bait_type = "Sensacionalismo Geral"
-            else:
-                bait_type = None
 
         return {
             "headline": headline,
@@ -581,3 +612,83 @@ class ClickbaitDetectionSystem:
             "uncertain": sup_res["uncertain"],
             "bait_type": bait_type,
         }
+
+    def predict(self, headline: str) -> Dict[str, Any]:
+        """
+        Predicts whether a headline is clickbait and determines its bait category.
+        Gracefully handles absence or failure of the unsupervised model.
+        Results are memoized per process for repeated headlines.
+        """
+        if self.supervised is None:
+            raise RuntimeError("Supervised model is not loaded in ClickbaitDetectionSystem.")
+
+        if not isinstance(headline, str) or not headline.strip():
+            return self._empty_result(headline)
+
+        cached = self._cache_get(headline)
+        if cached is not None:
+            return cached
+
+        result = self._predict_one(headline)
+        self._cache_set(headline, result)
+        return result
+
+    def predict_many(self, headlines: Sequence[str]) -> List[Dict[str, Any]]:
+        """
+        Predicts a batch of headlines using vectorized inference, reusing cached
+        results for repeated headlines and only computing the missing ones.
+        """
+        if self.supervised is None:
+            raise RuntimeError("Supervised model is not loaded in ClickbaitDetectionSystem.")
+
+        headlines = list(headlines)
+        n = len(headlines)
+        results: List[Optional[Dict[str, Any]]] = [None] * n
+        missing: List[Tuple[int, str]] = []
+
+        for i, h in enumerate(headlines):
+            if not isinstance(h, str) or not h.strip():
+                results[i] = self._empty_result(h)
+                continue
+            cached = self._cache_get(h)
+            if cached is not None:
+                results[i] = cached
+            else:
+                missing.append((i, h))
+
+        if missing:
+            texts = [h for _, h in missing]
+            probs = self.supervised.predict_proba(texts)  # shape (m, 2), vectorized
+
+            clickbait_positions: List[int] = []
+            for k, (i, h) in enumerate(missing):
+                prob_clickbait = float(probs[k, 1])
+                is_clickbait = bool(prob_clickbait >= 0.50)
+                results[i] = {
+                    "headline": h,
+                    "is_clickbait": is_clickbait,
+                    "clickbait_status": "clickbait" if is_clickbait else "not_clickbait",
+                    "probability": round(prob_clickbait, 4),
+                    "confidence": round(float(abs(prob_clickbait - 0.5) * 2), 4),
+                    "uncertain": bool(0.10 <= prob_clickbait < 0.85),
+                    "bait_type": None,
+                }
+                if is_clickbait:
+                    clickbait_positions.append(k)
+
+            if clickbait_positions and self.unsupervised is not None:
+                cb_texts = [missing[k][1] for k in clickbait_positions]
+                try:
+                    cluster_ids = self.unsupervised.predict(cb_texts)
+                    for k, cid in zip(clickbait_positions, cluster_ids):
+                        i = missing[k][0]
+                        results[i]["bait_type"] = self._resolve_bait_type(cid)
+                except Exception:
+                    for k in clickbait_positions:
+                        i = missing[k][0]
+                        results[i]["bait_type"] = "Sensacionalismo Geral"
+
+            for i, h in missing:
+                self._cache_set(h, results[i])
+
+        return [r for r in results if r is not None]

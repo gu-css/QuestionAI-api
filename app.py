@@ -47,32 +47,16 @@ app.add_middleware(
 class PredictBatchRequest(BaseModel):
     headlines: List[str]
 
-def process_headline(headline: str) -> Dict[str, Any]:
-    """Processes a single headline through the decoupled prediction system."""
-    if not isinstance(headline, str) or not headline.strip():
-        return {
-            "headline": headline if isinstance(headline, str) else str(headline or ""),
-            "is_clickbait": False,
-            "clickbait_status": "not_clickbait",
-            "probability": 0.0,
-            "confidence": 1.0,
-            "bait_type": None,
-        }
-
-    res = system.predict(headline)
+def format_result(res: Dict[str, Any]) -> Dict[str, Any]:
+    """Formats an internal prediction dict into the public API response schema."""
     is_clickbait = bool(res["is_clickbait"])
-    prob = float(res["probability"])
-    conf = float(res["confidence"])
-
-    bait_type = res["bait_type"] if is_clickbait else None
-
     return {
         "headline": res["headline"],
         "is_clickbait": is_clickbait,
         "clickbait_status": "clickbait" if is_clickbait else "not_clickbait",
-        "probability": round(prob, 4),
-        "confidence": round(conf, 4),
-        "bait_type": bait_type,
+        "probability": round(float(res["probability"]), 4),
+        "confidence": round(float(res["confidence"]), 4),
+        "bait_type": res["bait_type"] if is_clickbait else None,
     }
 
 @app.get("/health")
@@ -81,14 +65,19 @@ def health_check():
 
 @app.post("/predict")
 def predict_single(headline: str):
-    return process_headline(headline)
+    return format_result(system.predict(headline))
 
 @app.post("/predict_batch")
 def predict_batch(req: PredictBatchRequest):
-    results = [process_headline(h) for h in req.headlines]
+    results = [format_result(r) for r in system.predict_many(req.headlines)]
     return {"results": results}
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    logger.info(f"Starting FastAPI on port {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    workers = int(os.environ.get("WORKERS", "1"))
+    logger.info(f"Starting FastAPI on port {port} with {workers} worker(s)")
+    if workers > 1:
+        # Import-string form so each worker process loads its own copy of the model.
+        uvicorn.run("app:app", host="0.0.0.0", port=port, workers=workers)
+    else:
+        uvicorn.run(app, host="0.0.0.0", port=port)
