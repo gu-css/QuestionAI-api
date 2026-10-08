@@ -418,7 +418,7 @@ ARCHETYPE_MAPPING = {
     "Ciência, Saúde & Mistérios": "A Cura Milagrosa",
     "Esportes & Competições": "O Drama Tribal",
     "Polícia & Casos Chocantes": "O Medo Iminente",
-    "Urgência & Curiosidade Sensacionalista": "Alerta de Urgência (FOMO)",
+    "Urgência & Curiosidade Sensacionalista": "Alerta de Urgência",
     "Política & Escândalos": "A Indignação Direcionada",
 }
 
