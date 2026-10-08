@@ -46,8 +46,14 @@ def load_clickbaits(path: str) -> list[str]:
     df = pd.read_csv(path)
     if "label" in df.columns:
         df = df[df["label"] == 1]
-    col = "text" if "text" in df.columns else df.columns[0]
-    return df[col].astype(str).tolist()
+    # Mirror the notebook: train only on the "treino" partition if present
+    if "particao" in df.columns:
+        df = df[df["particao"].astype(str).str.lower() == "treino"]
+    # Notebook uses `text_processed` (stopwords removed); fall back to `text`
+    for col in ("text_processed", "text"):
+        if col in df.columns:
+            return df[col].fillna("").astype(str).tolist()
+    return df.iloc[:, 0].astype(str).tolist()
 
 
 def main() -> int:

@@ -458,7 +458,7 @@ class HDBSCANCategorizer(BaseEstimator):
         texts = list(texts)
         clean_texts = [normalize_text(t) for t in texts]
 
-        self.lm = SentenceTransformer(self.LM_NAME)
+        self.lm = SentenceTransformer(self.LM_NAME, device="cpu")
         emb = self.lm.encode(texts, normalize_embeddings=True, show_progress_bar=True)
 
         self.reducer_ = umap.UMAP(
@@ -500,7 +500,7 @@ class HDBSCANCategorizer(BaseEstimator):
         import hdbscan
         if isinstance(texts, str):
             texts = [texts]
-        emb = self.lm.encode(list(texts), normalize_embeddings=True)
+        emb = self.lm.encode(list(texts), normalize_embeddings=True, device="cpu")
         Xr = self.reducer_.transform(emb)
         labels, _ = hdbscan.approximate_predict(self.clusterer_, Xr)
         return np.asarray(labels)
@@ -546,13 +546,21 @@ class ClickbaitDetectionSystem:
         self,
         supervised: Optional[SupervisedPredictor] = None,
         unsupervised: Optional[UnsupervisedCategorizer] = None,
+        hdbscan: Optional[Any] = None,
         cache_size: int = 2048,
     ) -> None:
         self.supervised = supervised
         self.unsupervised = unsupervised
-        self._cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+        self.hdbscan = hdbscan
+        self._cache: OrderedDict[Any, Dict[str, Any]] = OrderedDict()
         self._cache_size = cache_size
         self._cache_lock = threading.Lock()
+
+    def _categorizer(self, name: str) -> Optional[Any]:
+        """Returns the requested categorizer (kmeans default; hdbscan if available)."""
+        if name == "hdbscan":
+            return self.hdbscan if self.hdbscan is not None else self.unsupervised
+        return self.unsupervised
 
     @staticmethod
     def _try_load_hdbscan(models_dir: str) -> Optional[Any]:
@@ -576,7 +584,6 @@ class ClickbaitDetectionSystem:
         models_dir: str = "models",
         unsup_artifacts_dir: Optional[str] = None,
         load_unsupervised: bool = True,
-        categorizer: str = "kmeans",
     ) -> "ClickbaitDetectionSystem":
         sup_path = os.path.join(models_dir, "supervised_model.joblib")
         supervised_predictor = None
@@ -585,12 +592,6 @@ class ClickbaitDetectionSystem:
 
         unsupervised_categorizer = None
         if load_unsupervised:
-            if categorizer == "hdbscan":
-                unsupervised_categorizer = cls._try_load_hdbscan(models_dir)
-                if unsupervised_categorizer is not None:
-                    return cls(supervised=supervised_predictor, unsupervised=unsupervised_categorizer)
-                logger.warning("HDBSCAN categorizer unavailable; falling back to K-Means.")
-
             # Candidate paths for the unsupervised model artifact
             candidate_paths: list[str] = []
 
@@ -687,20 +688,27 @@ class ClickbaitDetectionSystem:
                         int(k): str(v) for k, v in unsupervised_categorizer.cluster_topics.items()
                     }
 
-        return cls(supervised=supervised_predictor, unsupervised=unsupervised_categorizer)
+        hdbscan_categorizer = cls._try_load_hdbscan(models_dir) if load_unsupervised else None
+        if hdbscan_categorizer is None:
+            logger.info("HDBSCAN categorizer not available; only K-Means will be served.")
+        return cls(
+            supervised=supervised_predictor,
+            unsupervised=unsupervised_categorizer,
+            hdbscan=hdbscan_categorizer,
+        )
 
     # --- Caching (per-process LRU, thread-safe) ----------------------------
-    def _cache_get(self, headline: str) -> Optional[Dict[str, Any]]:
+    def _cache_get(self, key: Any) -> Optional[Dict[str, Any]]:
         with self._cache_lock:
-            if headline in self._cache:
-                self._cache.move_to_end(headline)
-                return self._cache[headline]
+            if key in self._cache:
+                self._cache.move_to_end(key)
+                return self._cache[key]
             return None
 
-    def _cache_set(self, headline: str, result: Dict[str, Any]) -> None:
+    def _cache_set(self, key: Any, result: Dict[str, Any]) -> None:
         with self._cache_lock:
-            self._cache[headline] = result
-            self._cache.move_to_end(headline)
+            self._cache[key] = result
+            self._cache.move_to_end(key)
             while len(self._cache) > self._cache_size:
                 self._cache.popitem(last=False)
 
@@ -716,24 +724,24 @@ class ClickbaitDetectionSystem:
             "bait_type": None,
         }
 
-    def _resolve_bait_type(self, cluster_id: Any) -> Optional[str]:
+    def _resolve_bait_type(self, cluster_id: Any, cat: Any) -> Optional[str]:
         cid = int(cluster_id)
         if cid < 0:
             return None  # HDBSCAN noise -> uncertain (no forced archetype)
-        topics = getattr(self.unsupervised, "cluster_topics", None) or {}
+        topics = getattr(cat, "cluster_topics", None) or {}
         topic = topics.get(cid, "Sensacionalismo Geral")
         if topic in ARCHETYPE_MAPPING:
             topic = ARCHETYPE_MAPPING[topic]
         return topic
 
-    def _predict_one(self, headline: str) -> Dict[str, Any]:
+    def _predict_one(self, headline: str, cat: Any) -> Dict[str, Any]:
         sup_res = self.supervised.predict_single(headline)
         bait_type = None
 
         if sup_res["is_clickbait"]:
-            if self.unsupervised is not None:
+            if cat is not None:
                 try:
-                    cat_res = self.unsupervised.categorize(headline)
+                    cat_res = cat.categorize(headline)
                     bait_type = cat_res.get("bait_type")
                     if bait_type in ARCHETYPE_MAPPING:
                         bait_type = ARCHETYPE_MAPPING[bait_type]
@@ -750,10 +758,10 @@ class ClickbaitDetectionSystem:
             "bait_type": bait_type,
         }
 
-    def predict(self, headline: str) -> Dict[str, Any]:
+    def predict(self, headline: str, categorizer: str = "kmeans") -> Dict[str, Any]:
         """
         Predicts whether a headline is clickbait and determines its bait category.
-        Gracefully handles absence or failure of the unsupervised model.
+        `categorizer` selects the unsupervised backend ("kmeans" | "hdbscan").
         Results are memoized per process for repeated headlines.
         """
         if self.supervised is None:
@@ -762,15 +770,17 @@ class ClickbaitDetectionSystem:
         if not isinstance(headline, str) or not headline.strip():
             return self._empty_result(headline)
 
-        cached = self._cache_get(headline)
+        cat = self._categorizer(categorizer)
+        key = (categorizer, headline)
+        cached = self._cache_get(key)
         if cached is not None:
             return cached
 
-        result = self._predict_one(headline)
-        self._cache_set(headline, result)
+        result = self._predict_one(headline, cat)
+        self._cache_set(key, result)
         return result
 
-    def predict_many(self, headlines: Sequence[str]) -> List[Dict[str, Any]]:
+    def predict_many(self, headlines: Sequence[str], categorizer: str = "kmeans") -> List[Dict[str, Any]]:
         """
         Predicts a batch of headlines using vectorized inference, reusing cached
         results for repeated headlines and only computing the missing ones.
@@ -778,6 +788,7 @@ class ClickbaitDetectionSystem:
         if self.supervised is None:
             raise RuntimeError("Supervised model is not loaded in ClickbaitDetectionSystem.")
 
+        cat = self._categorizer(categorizer)
         headlines = list(headlines)
         n = len(headlines)
         results: List[Optional[Dict[str, Any]]] = [None] * n
@@ -787,7 +798,7 @@ class ClickbaitDetectionSystem:
             if not isinstance(h, str) or not h.strip():
                 results[i] = self._empty_result(h)
                 continue
-            cached = self._cache_get(h)
+            cached = self._cache_get((categorizer, h))
             if cached is not None:
                 results[i] = cached
             else:
@@ -813,19 +824,19 @@ class ClickbaitDetectionSystem:
                 if is_clickbait:
                     clickbait_positions.append(k)
 
-            if clickbait_positions and self.unsupervised is not None:
+            if clickbait_positions and cat is not None:
                 cb_texts = [missing[k][1] for k in clickbait_positions]
                 try:
-                    cluster_ids = self.unsupervised.predict(cb_texts)
+                    cluster_ids = cat.predict(cb_texts)
                     for k, cid in zip(clickbait_positions, cluster_ids):
                         i = missing[k][0]
-                        results[i]["bait_type"] = self._resolve_bait_type(cid)
+                        results[i]["bait_type"] = self._resolve_bait_type(cid, cat)
                 except Exception:
                     for k in clickbait_positions:
                         i = missing[k][0]
                         results[i]["bait_type"] = "Sensacionalismo Geral"
 
             for i, h in missing:
-                self._cache_set(h, results[i])
+                self._cache_set((categorizer, h), results[i])
 
         return [r for r in results if r is not None]

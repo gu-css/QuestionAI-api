@@ -26,16 +26,11 @@ logger = logging.getLogger(__name__)
 # Base directories
 MODELS_DIR = BASE_DIR / "models"
 
-# Eagerly load the system
+# Eagerly load the system (both K-Means and, if available, HDBSCAN categorizers)
 logger.info("Initializing Clickbait Detection System...")
-# Choose the unsupervised categorizer backend:
-#   UNSUPERVISED_MODEL=kmeans  (default) -> Spherical K-Means (6 archetypes)
-#   UNSUPERVISED_MODEL=hdbscan           -> HDBSCAN (embeddings + UMAP; supports noise)
-UNSUPERVISED_MODEL = os.environ.get("UNSUPERVISED_MODEL", "kmeans").strip().lower()
 system = ClickbaitDetectionSystem.load(
     models_dir=str(MODELS_DIR),
     unsup_artifacts_dir=str(MODELS_DIR),
-    categorizer=UNSUPERVISED_MODEL,
 )
 
 app = FastAPI(title="Clickbait Shield API")
@@ -51,6 +46,7 @@ app.add_middleware(
 
 class PredictBatchRequest(BaseModel):
     headlines: List[str]
+    model: str = "kmeans"
 
 def format_result(res: Dict[str, Any]) -> Dict[str, Any]:
     """Formats an internal prediction dict into the public API response schema."""
@@ -69,12 +65,12 @@ def health_check():
     return {"status": "healthy"}
 
 @app.post("/predict")
-def predict_single(headline: str):
-    return format_result(system.predict(headline))
+def predict_single(headline: str, model: str = "kmeans"):
+    return format_result(system.predict(headline, categorizer=model))
 
 @app.post("/predict_batch")
 def predict_batch(req: PredictBatchRequest):
-    results = [format_result(r) for r in system.predict_many(req.headlines)]
+    results = [format_result(r) for r in system.predict_many(req.headlines, categorizer=req.model)]
     return {"results": results}
 
 if __name__ == "__main__":
