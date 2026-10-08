@@ -412,6 +412,17 @@ class UnsupervisedCategorizer(BaseEstimator):
         }
 
 
+
+ARCHETYPE_MAPPING = {
+    "Polícia & Casos Chocantes": "A Curiosidade Mórbida",
+    "Segredos & Estilo de Vida": "A Quebra de Paradigma",
+    "Ciência, Saúde & Mistérios": "A Pílula Mágica",
+    "Esportes & Competições": "O Drama Tribal",
+    "Celebridades & Entretenimento": "O Voyeur",
+    "Urgência & Curiosidade Sensacionalista": "O Gatilho de Escassez",
+    "Política & Escândalos": "O Gatilho de Escassez",
+}
+
 class ClickbaitDetectionSystem:
     """
     Decoupled Orchestrator integrating Supervised Classifier and Unsupervised Categorizer.
@@ -555,6 +566,8 @@ class ClickbaitDetectionSystem:
                 try:
                     cat_res = self.unsupervised.categorize(headline)
                     bait_type = cat_res.get("bait_type")
+                    if bait_type in ARCHETYPE_MAPPING:
+                        bait_type = ARCHETYPE_MAPPING[bait_type]
                 except Exception:
                     bait_type = "Sensacionalismo Geral"
             else:
