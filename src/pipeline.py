@@ -414,13 +414,12 @@ class UnsupervisedCategorizer(BaseEstimator):
 
 
 ARCHETYPE_MAPPING = {
-    "Polícia & Casos Chocantes": "A Curiosidade Mórbida",
-    "Segredos & Estilo de Vida": "A Quebra de Paradigma",
-    "Ciência, Saúde & Mistérios": "A Pílula Mágica",
+    "Segredos & Estilo de Vida": "Gatilho de Curiosidade",
+    "Ciência, Saúde & Mistérios": "A Cura Milagrosa",
     "Esportes & Competições": "O Drama Tribal",
-    "Celebridades & Entretenimento": "O Voyeur",
-    "Urgência & Curiosidade Sensacionalista": "O Gatilho de Escassez",
-    "Política & Escândalos": "O Gatilho de Escassez",
+    "Polícia & Casos Chocantes": "O Medo Iminente",
+    "Urgência & Curiosidade Sensacionalista": "Alerta de Urgência (FOMO)",
+    "Política & Escândalos": "A Indignação Direcionada",
 }
 
 class ClickbaitDetectionSystem:
