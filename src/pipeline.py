@@ -547,15 +547,6 @@ class HDBSCANCategorizer(BaseEstimator):
         }
 
 
-ARCHETYPE_MAPPING = {
-    "Segredos & Estilo de Vida": "Gatilho de Curiosidade",
-    "Ciência, Saúde & Mistérios": "A Cura Milagrosa",
-    "Esportes & Competições": "O Drama Tribal",
-    "Polícia & Casos Chocantes": "O Medo Iminente",
-    "Urgência & Curiosidade Sensacionalista": "Alerta de Urgência",
-    "Política & Escândalos": "A Indignação Direcionada",
-}
-
 class ClickbaitDetectionSystem:
     """
     Decoupled Orchestrator integrating Supervised Classifier and Unsupervised Categorizer.
@@ -750,10 +741,7 @@ class ClickbaitDetectionSystem:
         if cid < 0:
             return None  # HDBSCAN noise -> uncertain (no forced archetype)
         topics = getattr(cat, "cluster_topics", None) or {}
-        topic = topics.get(cid, "Sensacionalismo Geral")
-        if topic in ARCHETYPE_MAPPING:
-            topic = ARCHETYPE_MAPPING[topic]
-        return topic
+        return topics.get(cid, "Sensacionalismo Geral")
 
     def _predict_one(self, headline: str, cat: Any) -> Dict[str, Any]:
         sup_res = self.supervised.predict_single(headline)
@@ -764,8 +752,6 @@ class ClickbaitDetectionSystem:
                 try:
                     cat_res = cat.categorize(headline)
                     bait_type = cat_res.get("bait_type")
-                    if bait_type in ARCHETYPE_MAPPING:
-                        bait_type = ARCHETYPE_MAPPING[bait_type]
                 except Exception:
                     bait_type = "Sensacionalismo Geral"
 

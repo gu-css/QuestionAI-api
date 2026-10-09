@@ -136,8 +136,8 @@ def test_independent_predictors() -> None:
     cat = unsup_loaded.categorize("Jogador do time é flagrado em escândalo!")
     assert "cluster_id" in cat
     assert "bait_type" in cat
-    assert cat["bait_type"] == "Esportes & Competições", (
-        f"Expected 'Esportes & Competições', got '{cat['bait_type']}'"
+    assert cat["bait_type"] == "Rivalidade Esportiva", (
+        f"Expected 'Rivalidade Esportiva', got '{cat['bait_type']}'"
     )
     print(f"   Categorization sample: '{cat['bait_type']}' (Cluster {cat['cluster_id']})")
     print("   ✅ Independent predictor interfaces verified.\n")
@@ -182,15 +182,15 @@ def test_system_orchestration() -> None:
     print("   🔬 Testing semantic category alignment...")
     res_sports = system.predict("Chocante: Jogador do time de futebol foi suspenso do campeonato!")
     assert res_sports["is_clickbait"] is True
-    assert res_sports["bait_type"] == "Esportes & Competições", (
-        f"Semantic inversion detected! Expected 'Esportes & Competições', got '{res_sports['bait_type']}'"
+    assert res_sports["bait_type"] == "Rivalidade Esportiva", (
+        f"Semantic inversion detected! Expected 'Rivalidade Esportiva', got '{res_sports['bait_type']}'"
     )
     print(f"       ✔ Sports headline -> '{res_sports['bait_type']}'")
 
     res_police = system.predict("Urgente: Operação da polícia prende quadrilha após investigação brutal na cidade!")
     assert res_police["is_clickbait"] is True
-    assert res_police["bait_type"] == "Polícia & Casos Chocantes", (
-        f"Semantic inversion detected! Expected 'Polícia & Casos Chocantes', got '{res_police['bait_type']}'"
+    assert res_police["bait_type"] == "Choque e Morbidez", (
+        f"Semantic inversion detected! Expected 'Choque e Morbidez', got '{res_police['bait_type']}'"
     )
     print(f"       ✔ Police headline -> '{res_police['bait_type']}'")
 

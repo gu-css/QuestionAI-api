@@ -145,7 +145,7 @@ def test_unsupervised_categorizer_outputs(unsupervised_categorizer):
     assert len(cat["bait_type"]) > 3
     assert "keywords" in cat
     assert isinstance(cat["keywords"], list)
-    assert cat["bait_type"] == "Esportes & Competições"
+    assert cat["bait_type"] == "Rivalidade Esportiva"
 
 
 def test_detection_system_end_to_end(detection_system):
@@ -171,12 +171,12 @@ def test_semantic_topic_predictions_sports_and_police(detection_system):
     sports_headline = "Chocante: Jogador do time de futebol foi suspenso do campeonato!"
     res_sports = detection_system.predict(sports_headline)
     assert res_sports["is_clickbait"] is True
-    assert res_sports["bait_type"] == "Esportes & Competições"
+    assert res_sports["bait_type"] == "Rivalidade Esportiva"
 
     police_headline = "Urgente: Operação da polícia prende quadrilha após investigação brutal na cidade!"
     res_police = detection_system.predict(police_headline)
     assert res_police["is_clickbait"] is True
-    assert res_police["bait_type"] == "Polícia & Casos Chocantes"
+    assert res_police["bait_type"] == "Choque e Morbidez"
 
 
 # ============================================================================
