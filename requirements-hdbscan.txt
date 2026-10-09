@@ -1,7 +1,15 @@
-# Optional dependencies for the HDBSCAN categorizer (Option A / UNSUPERVISED_MODEL=hdbscan).
-# Install separately only if you want the HDBSCAN backend:
+# Dependências do backend HDBSCAN (UNSUPERVISED_MODEL / model=hdbscan).
+# Instale com:
 #     pip install -r requirements-hdbscan.txt
-sentence-transformers>=2.6.0
+#
+# Importante: mantenha `transformers < 5.0`. O optimum[onnxruntime] (seção ONNX
+# do notebook) exige transformers 4.x, e o modelo serializado só carrega de forma
+# consistente se a versão do transformers usada no treino e na inferência bater.
+sentence-transformers>=6.0
+transformers<5.0
 umap-learn>=0.5.3
 hdbscan>=0.8.33
 torch>=2.0.0
+
+# ONNX int8 (opcional — usado na seção de quantização do notebook minilm_hdbscan.ipynb):
+optimum[onnxruntime]>=2.0

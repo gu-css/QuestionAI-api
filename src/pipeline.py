@@ -435,7 +435,7 @@ class HDBSCANCategorizer(BaseEstimator):
         self,
         n_umap: int = 10,
         min_samples: int = 3,
-        min_cluster_size: int = 60,
+        min_cluster_size: Optional[int] = None,
         random_state: int = 42,
     ) -> None:
         self.n_umap = n_umap
@@ -448,6 +448,23 @@ class HDBSCANCategorizer(BaseEstimator):
         self.clusterer_ = None
         self.cluster_topics: dict[int, str] = {}
         self.cluster_keywords: dict[int, list[str]] = {}
+
+    def _search_min_cluster_size(self, Xr: np.ndarray, hdbscan_module: Any) -> int:
+        """Auto-select min_cluster_size (mirrors the notebook): the value in
+        [40..120] that yields 5-20 clusters with the least noise."""
+        grade = [40, 50, 60, 70, 80, 100, 120]
+        best_pct, best_size = None, 60
+        for size in grade:
+            lab = hdbscan_module.HDBSCAN(
+                min_cluster_size=size, min_samples=self.min_samples
+            ).fit_predict(Xr)
+            n_cl = len(set(int(x) for x in lab)) - (1 if -1 in lab else 0)
+            n_ru = int((lab == -1).sum())
+            if 5 <= n_cl <= 20:
+                pct = n_ru / len(lab)
+                if best_pct is None or pct < best_pct:
+                    best_pct, best_size = pct, size
+        return best_size
 
     def fit(self, texts: Sequence[str], y: Any = None) -> "HDBSCANCategorizer":
         from sentence_transformers import SentenceTransformer
@@ -468,6 +485,10 @@ class HDBSCANCategorizer(BaseEstimator):
             random_state=self.random_state,
         )
         Xr = self.reducer_.fit_transform(emb)
+
+        # Auto-search min_cluster_size (mirrors the notebook) when not set explicitly.
+        if self.min_cluster_size is None:
+            self.min_cluster_size = self._search_min_cluster_size(Xr, hdbscan)
 
         self.clusterer_ = hdbscan.HDBSCAN(
             min_cluster_size=self.min_cluster_size,
