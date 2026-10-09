@@ -36,14 +36,14 @@ from src.features import (
 logger = logging.getLogger(__name__)
 
 
-# Human-readable labels for the 6 clickbait archetypes discovered in the corpus
+# Human-readable labels for the 6 clickbait attention-grabbing tools
 DEFAULT_CLUSTER_TOPICS: dict[int, str] = {
-    0: "Polícia & Casos Chocantes",
-    1: "Segredos & Estilo de Vida",
-    2: "Ciência, Saúde & Mistérios",
-    3: "Esportes & Competições",
-    4: "Celebridades & Entretenimento",
-    5: "Urgência & Curiosidade Sensacionalista",
+    0: "Choque e Morbidez",
+    1: "Curiosidade e Segredos",
+    2: "Promessa de Descoberta",
+    3: "Rivalidade Esportiva",
+    4: "Fofoca de Celebridades",
+    5: "Incredulidade",
 }
 
 
@@ -222,14 +222,25 @@ class SupervisedPredictor:
         }
 
 
-# Archetype definitions for mapping cluster keywords to human-readable categories
+# Attention-grabbing tool definitions: maps cluster keywords to the tool the
+# clickbait uses to grab the reader's attention (curiosity, fear, outrage, etc.).
+# Ordered from most specific to most generic so specific categories win ties.
 ARCHETYPE_DEFINITIONS: list[tuple[str, list[str]]] = [
-    ("Polícia & Casos Chocantes", ["polícia", "crime", "cidade", "detalhes", "operação", "policial", "preso", "prisão", "tragédia", "investigação"]),
-    ("Esportes & Competições", ["time", "futebol", "jogador", "campeonato", "estádio", "estrela", "técnico", "equipe", "clube", "copa"]),
-    ("Ciência, Saúde & Mistérios", ["cientistas", "descoberta", "saúde", "cura", "estudo", "médicos", "remédio", "nasa", "pesquisadores"]),
-    ("Segredos & Estilo de Vida", ["segredo", "descubra segredo", "dicas", "vida", "economizar", "hábito", "milionários", "dinheiro"]),
-    ("Urgência & Curiosidade Sensacionalista", ["vai acreditar", "acreditar", "vai mudar", "mudar", "chocante", "ninguém esperava", "revelado"]),
-    ("Política & Escândalos", ["escândalo", "governo", "promete", "política", "presidente", "lei", "decisão", "revelação"]),
+    ("Rivalidade Esportiva", ["time", "futebol", "jogador", "campeonato", "estádio", "equipe", "torcida", "clube", "copa", "técnico", "estrela"]),
+    ("Choque e Morbidez", ["polícia", "crime", "bandidos", "brutal", "preso", "prisão", "tragédia", "investigação", "policial", "operação", "quadrilha"]),
+    ("Indignação Política", ["escândalo", "governo", "corrupção", "prefeito", "lei", "país", "presidente", "política", "promete"]),
+    ("Fofoca de Celebridades", ["fãs", "romance", "taylor swift", "flagrado", "famoso", "celebridade", "jennifer", "ator", "atriz"]),
+    ("Desejo de Viagem", ["viagens", "turistas", "destinos", "viajar", "turismo", "brasil", "brasileiros"]),
+    ("Alerta Econômico", ["inflação", "mercado", "bolsa", "crise", "dólar", "juros", "investidores", "economia"]),
+    ("Novidade Tecnológica", ["smartphone", "iphone", "apple", "câmera", "celular", "lançamento"]),
+    ("Cura Milagrosa", ["vacina", "câncer", "cura", "definitiva", "doença"]),
+    ("Autoaperfeiçoamento", ["cérebro", "meditação", "exercícios", "música", "hábito", "mente"]),
+    ("Maravilha Científica", ["amazônia", "encontrada", "natureza"]),
+    ("Futurismo Tecnológico", ["tecnologia", "planeta", "inteligência artificial", "terra", "espaço"]),
+    ("Promessa de Descoberta", ["cientistas", "descoberta", "estudo", "médicos", "remédio", "nasa", "pesquisadores", "pesquisa"]),
+    ("Promessa de Saúde", ["dieta", "alimentos", "saudável", "saúde", "vida"]),
+    ("Curiosidade e Segredos", ["segredo", "descubra segredo", "dicas", "revelado", "mistério", "trás"]),
+    ("Incredulidade", ["acreditar", "incrível", "mudar", "chocante", "ninguém esperava", "revolucionar", "revolucionária"]),
 ]
 
 
@@ -266,42 +277,33 @@ def load_topics_from_csv(
 ) -> dict[int, str]:
     """
     Parses temas_por_cluster.csv from entrega artifacts and constructs
-    a dictionary of cluster_id -> human-readable typology title.
-    Maps the 6 descriptive Portuguese typologies for K-Means esférico:
-      0: "Celebridades & Entretenimento"
-      1: "Urgência & Curiosidade Sensacionalista"
-      2: "Polícia & Casos Chocantes"
-      3: "Esportes & Competições"
-      4: "Ciência, Saúde & Mistérios"
-      5: "Política, Economia & Sociedade"
+    a dictionary of cluster_id -> human-readable attention-grabbing tool label.
     """
     if not os.path.exists(csv_path):
         return {}
 
     PREDEFINED_TITLES: dict[str, dict[int, str]] = {
         "K-Means esférico": {
-            0: "Segredos & Estilo de Vida",
-            1: "Ciência, Saúde & Mistérios",
-            2: "Esportes & Competições",
-            3: "Polícia & Casos Chocantes",
-            4: "Urgência & Curiosidade Sensacionalista",
-            5: "Política & Escândalos",
+            0: "Curiosidade e Segredos",
+            1: "Promessa de Descoberta",
+            2: "Rivalidade Esportiva",
+            3: "Choque e Morbidez",
+            4: "Incredulidade",
+            5: "Indignação Política",
         },
         "HDBSCAN": {
-            0: "Esportes & Competições",
-            1: "Celebridades & Entretenimento",
-            2: "Viagens & Turismo",
-            3: "Polícia & Casos Chocantes",
-            4: "Turismo & Destinos Internacionais",
-            5: "Economia Nacional & Sociedade",
-            6: "Medicina & Vacinas",
-            7: "Saúde & Alimentação",
-            8: "Curiosidades Científicas",
-            9: "Tecnologia & Gadgets",
-            10: "Política & Escândalos",
-            11: "Economia & Investimentos",
-            12: "Ciência & Descobertas Naturais",
-            13: "Espaço, Clima & Planeta",
+            0: "Rivalidade Esportiva",
+            1: "Fofoca de Celebridades",
+            2: "Desejo de Viagem",
+            3: "Choque e Morbidez",
+            4: "Promessa de Saúde",
+            5: "Indignação Política",
+            6: "Alerta Econômico",
+            7: "Novidade Tecnológica",
+            8: "Cura Milagrosa",
+            9: "Autoaperfeiçoamento",
+            10: "Maravilha Científica",
+            11: "Futurismo Tecnológico",
             -1: "Sensacionalismo Geral",
         },
     }
