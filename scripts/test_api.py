@@ -6,7 +6,7 @@ headline and verifies that the JSON response contains both the clickbait status 
 
 Usage:
     python3 scripts/test_api.py
-    python3 scripts/test_api.py --url http://127.0.0.1:7860
+    python3 scripts/test_api.py --url http://127.0.0.1:8000
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ def parse_args():
     parser.add_argument(
         "--url",
         type=str,
-        default="http://127.0.0.1:7860",
-        help="Base URL of the running API server (default: http://127.0.0.1:7860)",
+        default="http://127.0.0.1:8000",
+        help="Base URL of the running API server (default: http://127.0.0.1:8000)",
     )
     return parser.parse_args()
 

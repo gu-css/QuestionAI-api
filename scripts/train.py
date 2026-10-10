@@ -52,7 +52,6 @@ from src.features import (
 from src.pipeline import (
     build_supervised_pipeline,
     UnsupervisedCategorizer,
-    DEFAULT_CLUSTER_TOPICS,
 )
 
 DATA_URL = (

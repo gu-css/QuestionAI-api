@@ -13,12 +13,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# Project directories
+# Project directories. models/scripts/app live under api/ (PROJECT_ROOT),
+# but extension/, docs/ and hf_space/ live at the repo root (one level up).
+REPO_ROOT = PROJECT_ROOT.parent
 MODELS_DIR = PROJECT_ROOT / "models"
-EXTENSION_DIR = PROJECT_ROOT / "extension"
-DOCS_DIR = PROJECT_ROOT / "docs"
+EXTENSION_DIR = REPO_ROOT / "extension"
+DOCS_DIR = REPO_ROOT / "docs"
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
-HF_SPACE_DIR = PROJECT_ROOT / "hf_space"
+HF_SPACE_DIR = REPO_ROOT / "hf_space"
 
 # -----------------------------------------------------------------------------
 # Curated Test Datasets (Derived from Brazilian news & clickbait datasets)
@@ -99,7 +101,7 @@ def has_m2_app() -> bool:
     app_path = PROJECT_ROOT / "app.py"
     return app_path.exists()
 
-def is_m2_live_api_online(url: str = "http://127.0.0.1:7860") -> bool:
+def is_m2_live_api_online(url: str = "http://127.0.0.1:8000") -> bool:
     """Probes whether the local Gradio/FastAPI server is actively listening."""
     import urllib.request
     try:

@@ -1,5 +1,5 @@
 """tests/test_challenger_empirical_m1.py
-Empirical stress-testing suite for Milestone M1 / M2 API and Gradio app.
+Empirical stress-testing suite for Milestone M1 / M2 API.
 
 Verifies:
 1. Endpoints /api/predict and /predict alias with:
@@ -11,9 +11,7 @@ Verifies:
 2. Contract verification:
    - If is_clickbait is False -> bait_type is strictly None (null in JSON)
    - If is_clickbait is True -> bait_type is strictly a non-empty string
-3. Gradio interface (gradio_analyze function) output integrity
 """
-
 import sys
 import time
 from pathlib import Path
@@ -24,7 +22,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app import app, gradio_analyze
+from app import app
 
 client = TestClient(app)
 
@@ -162,43 +160,3 @@ class TestContractStrictness:
         assert data["clickbait_status"] == "clickbait"
         assert isinstance(data["bait_type"], str), f"Expected str for bait_type, got {type(data['bait_type'])}"
         assert len(data["bait_type"].strip()) > 0, f"Expected non-empty string for bait_type"
-
-
-class TestGradioEmpirical:
-    """Verify Gradio analyze function edge cases and output contracts."""
-
-    def test_gradio_empty_string(self):
-        status, prob, conf, bait_label, json_dict = gradio_analyze("")
-        assert "vazia" in status.lower()
-        assert prob == 0.0
-        assert conf == 1.0
-        assert json_dict["bait_type"] is None
-        assert json_dict["is_clickbait"] is False
-
-    def test_gradio_massive_string(self):
-        text = "Notícia normal " * 1000
-        status, prob, conf, bait_label, json_dict = gradio_analyze(text)
-        assert isinstance(status, str)
-        assert isinstance(prob, (float, int))
-        assert isinstance(conf, (float, int))
-        assert isinstance(bait_label, str)
-        assert isinstance(json_dict, dict)
-
-    def test_gradio_clickbait(self):
-        headline = "Você não vai acreditar no que aconteceu com esse famoso!"
-        status, prob, conf, bait_label, json_dict = gradio_analyze(headline)
-        assert "CLICKBAIT" in status
-        assert prob > 0.5
-        assert bait_label != "Nenhum (Manchete Factual)"
-        assert json_dict["is_clickbait"] is True
-        assert json_dict["bait_type"] is not None
-        assert len(json_dict["bait_type"]) > 0
-
-    def test_gradio_legitimate(self):
-        headline = "Banco Central eleva taxa Selic para 11,25% ao ano em reunião do Copom"
-        status, prob, conf, bait_label, json_dict = gradio_analyze(headline)
-        assert "FACTUAL" in status or "LEGÍTIMO" in status
-        assert prob < 0.5
-        assert bait_label == "Nenhum (Manchete Factual)"
-        assert json_dict["is_clickbait"] is False
-        assert json_dict["bait_type"] is None

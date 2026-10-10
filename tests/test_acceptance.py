@@ -118,7 +118,7 @@ class TestAcceptanceCriteriaR2:
         # Check if live server is running
         if is_m2_live_api_online():
             import requests
-            resp = requests.post("http://127.0.0.1:7860/api/predict", json=payload, timeout=10)
+            resp = requests.post("http://127.0.0.1:8000/api/predict", json=payload, timeout=10)
             assert resp.status_code == 200, f"Expected HTTP 200, got {resp.status_code}: {resp.text}"
             data = resp.json()
         elif has_m2_app():
@@ -134,7 +134,7 @@ class TestAcceptanceCriteriaR2:
             assert resp.status_code == 200, f"Expected HTTP 200, got {resp.status_code}: {resp.text}"
             data = resp.json()
         else:
-            pytest.skip("M2 pending: 'app.py' or live Gradio server at http://127.0.0.1:7860 not yet available.")
+            pytest.skip("M2 pending: 'app.py' or live server at http://127.0.0.1:8000 not yet available.")
 
         # Authoritative assertions per AC R2
         assert "clickbait_status" in data, f"Response JSON missing 'clickbait_status': {data}"

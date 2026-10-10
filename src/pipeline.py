@@ -36,17 +36,6 @@ from src.features import (
 logger = logging.getLogger(__name__)
 
 
-# Human-readable labels for the 6 clickbait attention-grabbing tools
-DEFAULT_CLUSTER_TOPICS: dict[int, str] = {
-    0: "Choque e Morbidez",
-    1: "Curiosidade e Segredos",
-    2: "Promessa de Descoberta",
-    3: "Rivalidade Esportiva",
-    4: "Fofoca de Celebridades",
-    5: "Incredulidade",
-}
-
-
 def build_supervised_pipeline(
     ngram_range: tuple[int, int] = (1, 2),
     max_features: int = 5000,
@@ -116,7 +105,6 @@ class SupervisedPredictor:
 
     def __init__(self, model_path: Optional[str] = None, model: Optional[Any] = None) -> None:
         self.model = model
-        self._init_fast_path()
         if model_path:
             self.load(model_path)
 
@@ -124,54 +112,13 @@ class SupervisedPredictor:
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Supervised model not found at: {model_path}")
         self.model = joblib.load(model_path)
-        self._init_fast_path()
         return self
-
-    def _init_fast_path(self) -> None:
-        self._fast_ready = False
-        try:
-            if self.model is not None and hasattr(self.model, "named_steps"):
-                extractor = self.model.named_steps.get("extract")
-                cal_model = self.model.named_steps.get("model")
-                if extractor and cal_model and hasattr(cal_model, "calibrated_classifiers_"):
-                    ccs = cal_model.calibrated_classifiers_
-                    self._fast_extractor = extractor
-                    self._fast_tfidfs = []
-                    self._fast_means = []
-                    self._fast_scales = []
-                    self._fast_coef_tfidfs = []
-                    self._fast_coef_stylos = []
-                    self._fast_intercepts = []
-                    self._fast_calibrators = []
-
-                    for cc in ccs:
-                        prep = cc.estimator.named_steps["prep"]
-                        clf = cc.estimator.named_steps["clf"]
-                        tfidf = prep.named_transformers_["tfidf"]
-                        estilo = prep.named_transformers_["estilo"]
-                        coef = clf.coef_[0]
-
-                        self._fast_tfidfs.append(tfidf)
-                        self._fast_means.append(estilo.mean_)
-                        self._fast_scales.append(estilo.scale_)
-                        self._fast_coef_tfidfs.append(coef[:5000])
-                        self._fast_coef_stylos.append(coef[5000:])
-                        self._fast_intercepts.append(clf.intercept_[0])
-                        self._fast_calibrators.append(cc.calibrators[0])
-
-                    self._fast_n_ccs = len(ccs)
-                    self._fast_ready = True
-        except Exception:
-            self._fast_ready = False
 
     def predict(self, texts: Union[str, Sequence[str], pd.DataFrame]) -> np.ndarray:
         if self.model is None:
             raise RuntimeError("Supervised model is not loaded.")
         if isinstance(texts, str):
             texts = [texts]
-        if self._fast_ready and isinstance(texts, (list, tuple)) and len(texts) == 1 and isinstance(texts[0], str):
-            probs = self.predict_proba(texts)
-            return np.array([int(probs[0, 1] >= 0.50)])
         return self.model.predict(texts)
 
     def predict_proba(self, texts: Union[str, Sequence[str], pd.DataFrame]) -> np.ndarray:
@@ -179,24 +126,6 @@ class SupervisedPredictor:
             raise RuntimeError("Supervised model is not loaded.")
         if isinstance(texts, str):
             texts = [texts]
-
-        if self._fast_ready and isinstance(texts, (list, tuple)) and len(texts) == 1 and isinstance(texts[0], str):
-            text = texts[0]
-            df = self._fast_extractor.transform([text])
-            clean = df["text_clean"].iloc[0]
-            raw_stylo = df[["excl_count", "quest_presence", "char_count", "trigger_count", "upper_ratio", "has_num"]].to_numpy()[0]
-
-            probs = 0.0
-            for i in range(self._fast_n_ccs):
-                xt = self._fast_tfidfs[i].transform([clean])
-                scaled_stylo = (raw_stylo - self._fast_means[i]) / self._fast_scales[i] * 0.1
-                df_val = xt.dot(self._fast_coef_tfidfs[i]) + np.dot(scaled_stylo, self._fast_coef_stylos[i]) + self._fast_intercepts[i]
-                prob = self._fast_calibrators[i].predict(np.array([df_val]))[0]
-                probs += prob
-
-            prob_clickbait = probs / self._fast_n_ccs
-            return np.array([[1.0 - prob_clickbait, prob_clickbait]])
-
         return self.model.predict_proba(texts)
 
     def predict_single(self, text: str, threshold: float = 0.50) -> dict[str, Any]:
@@ -589,7 +518,8 @@ class ClickbaitDetectionSystem:
                 with open(topics_path, "r", encoding="utf-8") as f:
                     categorizer.cluster_topics = {int(k): str(v) for k, v in json.load(f).items()}
             return categorizer
-        except Exception:
+        except Exception as e:
+            logger.warning("HDBSCAN categorizer failed to load: %s", e)
             return None
 
     @classmethod

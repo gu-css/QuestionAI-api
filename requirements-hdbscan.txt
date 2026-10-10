@@ -10,6 +10,3 @@ transformers<5.0
 umap-learn>=0.5.3
 hdbscan>=0.8.33
 torch>=2.0.0
-
-# ONNX int8 (opcional — usado na seção de quantização do notebook minilm_hdbscan.ipynb):
-optimum[onnxruntime]>=2.0

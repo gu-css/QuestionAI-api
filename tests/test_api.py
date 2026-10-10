@@ -32,7 +32,7 @@ def get_api_client():
         import requests
         class LiveClient:
             def request(self, method: str, path: str, **kwargs):
-                url = f"http://127.0.0.1:7860{path}"
+                url = f"http://127.0.0.1:8000{path}"
                 return requests.request(method, url, timeout=10, **kwargs)
             def get(self, path: str, **kwargs):
                 return self.request("GET", path, **kwargs)
@@ -66,7 +66,7 @@ class TestApiEndpointsTier1:
         """Verifies POST /api/predict with single clickbait headline returns 200 and schema."""
         client, mode = get_api_client()
         if client is None:
-            pytest.skip("M2 pending: 'app.py' or live server at http://127.0.0.1:7860 not yet available.")
+            pytest.skip("M2 pending: 'app.py' or live server at http://127.0.0.1:8000 not yet available.")
 
         payload = {"headline": clickbait_headlines[0]}
         resp = client.post("/api/predict", json=payload)
@@ -147,16 +147,6 @@ class TestApiEndpointsTier1:
         assert post_origin in ("*", headers["Origin"]), (
             f"POST response missing Access-Control-Allow-Origin: {post_origin}"
         )
-
-    def test_gradio_ui_root_endpoint(self):
-        """Verifies GET / serves the interactive Gradio Web UI."""
-        client, mode = get_api_client()
-        if client is None:
-            pytest.skip("M2 pending: 'app.py' or live server not yet available.")
-
-        resp = client.get("/")
-        assert resp.status_code == 200, f"Expected 200 at GET /, got {resp.status_code}"
-        assert "text/html" in resp.headers.get("content-type", "")
 
     def test_hf_space_bundle_integrity(self):
         """Verifies that hf_space/ package is prepared for manual Hugging Face Spaces upload."""

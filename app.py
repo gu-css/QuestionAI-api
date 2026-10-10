@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # Ensure root dir is in sys.path
 BASE_DIR = Path(__file__).resolve().parent
@@ -10,7 +10,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -48,6 +48,13 @@ class PredictBatchRequest(BaseModel):
     headlines: List[str]
     model: str = "kmeans"
 
+
+class PredictRequest(BaseModel):
+    headline: Optional[str] = None
+    headlines: Optional[List[str]] = None
+    model: str = "kmeans"
+
+
 def format_result(res: Dict[str, Any]) -> Dict[str, Any]:
     """Formats an internal prediction dict into the public API response schema."""
     is_clickbait = bool(res["is_clickbait"])
@@ -65,8 +72,27 @@ def health_check():
     return {"status": "healthy"}
 
 @app.post("/predict")
-def predict_single(headline: str, model: str = "kmeans"):
+def predict_single(
+    headline: Optional[str] = Query(None),
+    model: str = Query("kmeans"),
+    body: Optional[PredictRequest] = Body(None),
+):
+    # Supports both query params (extension) and a JSON body (tests/contract).
+    if headline is None and body is not None:
+        headline = body.headline
+        model = body.model
+    if headline is None:
+        raise HTTPException(status_code=422, detail="headline is required")
     return format_result(system.predict(headline, categorizer=model))
+
+@app.post("/api/predict")
+def api_predict(req: PredictRequest):
+    if req.headlines:
+        results = [format_result(r) for r in system.predict_many(req.headlines, categorizer=req.model)]
+        return {"results": results}
+    if req.headline is not None:
+        return format_result(system.predict(req.headline, categorizer=req.model))
+    raise HTTPException(status_code=422, detail="headline or headlines is required")
 
 @app.post("/predict_batch")
 def predict_batch(req: PredictBatchRequest):
