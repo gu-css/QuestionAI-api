@@ -20,7 +20,11 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
-const SW_PATH = path.join(ROOT_DIR, 'extension', 'background', 'service-worker.js');
+// Repos are split: extension/ is a sibling of api/, old monorepo layout as fallback.
+const _LOCAL_EXT = path.join(ROOT_DIR, 'extension');
+const _SIBLING_EXT = path.join(ROOT_DIR, '..', 'extension');
+const _EXTENSION_DIR = fs.existsSync(_SIBLING_EXT) ? _SIBLING_EXT : _LOCAL_EXT;
+const SW_PATH = path.join(_EXTENSION_DIR, 'background', 'service-worker.js');
 
 // Global collector for uncaught rejections
 const unhandledRejections = [];
@@ -551,8 +555,11 @@ async function runAdversarialSuite() {
         apiUrl: mockServerUrl
       });
 
-      assert(res.success === true, 'Expected success === true for 50KB headline');
-      assert(res.data.is_clickbait === true, 'Expected is_clickbait === true');
+      // A 50KB headline rides in the URL query string, so any real server
+      // (node http: 431, uvicorn: 414) rejects the request line. What matters
+      // is graceful handling: structured error, no crash, no hanging promise.
+      assert(res.success === false, 'Expected graceful failure for 50KB query-string headline');
+      assert(typeof res.error === 'string', 'Expected error string for oversized URL');
     });
 
     // -------------------------------------------------------------
@@ -656,7 +663,7 @@ async function runAdversarialSuite() {
       await installedListener();
 
       const stored = await storage.get(null);
-      assert(stored.apiUrl === 'http://localhost:7860/api/predict', 'Default apiUrl initialized');
+      assert(stored.apiUrl === 'https://clickbait-api.onrender.com', 'Default apiUrl initialized');
       assert(stored.enabled === true, 'Default enabled initialized');
       assert(stored.stats.totalScanned === 0, 'Default stats initialized');
     });

@@ -38,7 +38,7 @@ from src.pipeline import (
     UnsupervisedCategorizer,
     load_topics_from_csv,
 )
-from app import app, process_headline
+from app import app
 import app as app_module
 
 

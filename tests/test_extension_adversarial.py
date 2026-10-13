@@ -16,7 +16,10 @@ from pathlib import Path
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-EXTENSION_DIR = PROJECT_ROOT / "extension"
+# Repos are split: extension/ is a sibling of api/, with the old monorepo
+# layout (extension/ under api/) kept as fallback.
+_EXTENSION_CANDIDATES = [PROJECT_ROOT.parent / "extension", PROJECT_ROOT / "extension"]
+EXTENSION_DIR = next((p for p in _EXTENSION_CANDIDATES if p.is_dir()), _EXTENSION_CANDIDATES[0])
 SW_PATH = EXTENSION_DIR / "background" / "service-worker.js"
 NODE_HARNESS_PATH = PROJECT_ROOT / "tests" / "test_extension_network_adversarial.js"
 

@@ -176,24 +176,77 @@ class TestApiDecouplingTier1:
     unsupervised model is absent or swapped (returns prediction with bait_type=null).
     """
 
-    def test_api_graceful_fallback_when_unsupervised_categorizer_unavailable(self):
-        """Verifies contract: If unsupervised model is unavailable, API still performs
+    def test_api_graceful_fallback_when_unsupervised_categorizer_unavailable(self, monkeypatch):
+        """Verifies contract with a real degraded system: supervised still
+        classifies, bait_type is None instead of crashing."""
+        import app as app_module
+        from fastapi.testclient import TestClient
+        from src.pipeline import ClickbaitDetectionSystem
 
-        supervised classification and returns bait_type=null without failing.
-        """
-        # Test the contract schema behavior when bait_type is None on clickbait fallback
-        fallback_data = {
-            "headline": "Você não vai acreditar no que aconteceu com esse famoso!",
-            "is_clickbait": True,
-            "clickbait_status": "clickbait",
-            "probability": 0.985,
-            "confidence": 0.97,
-            "bait_type": None,  # Graceful fallback
-        }
-        # Verify that API consumers and contract consider this a valid payload when unsupervised model is absent
-        assert fallback_data["is_clickbait"] is True
-        assert fallback_data["bait_type"] is None
-        assert 0.0 <= fallback_data["probability"] <= 1.0
+        degraded = ClickbaitDetectionSystem.load(load_unsupervised=False)
+        assert degraded.unsupervised is None
+        monkeypatch.setattr(app_module, "system", degraded)
+        client = TestClient(app_module.app)
+
+        resp = client.post("/api/predict", json={"headline": "Você não vai acreditar no que aconteceu com esse famoso!"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["is_clickbait"] is True
+        assert data["clickbait_status"] == "clickbait"
+        assert data["bait_type"] is None
+
+        resp_legit = client.post("/api/predict", json={"headline": "Ministério da Fazenda divulga balanço fiscal do terceiro trimestre."})
+        assert resp_legit.status_code == 200
+        assert resp_legit.json()["bait_type"] is None
+
+
+class TestApiGuardsTier1:
+    """Guards from the repo audit: batch cap, model allowlist, honest health."""
+
+    def test_batch_over_limit_returns_413(self):
+        client, mode = get_api_client()
+        if client is None:
+            pytest.skip("M2 pending: API not yet available.")
+
+        payload = {"headlines": ["Notícia sobre economia e política brasileira."] * 101}
+        resp = client.post("/api/predict", json=payload)
+        assert resp.status_code == 413, f"Expected 413 for 101-item batch, got {resp.status_code}"
+
+    def test_unknown_model_returns_422(self):
+        client, mode = get_api_client()
+        if client is None:
+            pytest.skip("M2 pending: API not yet available.")
+
+        resp = client.post("/predict?headline=Teste de manchete qualquer&model=nosuchmodel")
+        assert resp.status_code == 422, f"Expected 422 for unknown model, got {resp.status_code}"
+
+        resp_body = client.post("/api/predict", json={"headline": "Teste", "model": "foo"})
+        assert resp_body.status_code == 422, f"Expected 422 for unknown model in body, got {resp_body.status_code}"
+
+    def test_health_reports_loaded_models(self):
+        client, mode = get_api_client()
+        if client is None:
+            pytest.skip("M2 pending: API not yet available.")
+
+        for path in ("/health", "/api/health"):
+            resp = client.get(path)
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["status"] == "healthy"
+            assert data["supervised_loaded"] is True
+
+    def test_health_returns_503_when_supervised_missing(self, monkeypatch):
+        import app as app_module
+        from fastapi.testclient import TestClient
+        from src.pipeline import ClickbaitDetectionSystem
+
+        degraded = ClickbaitDetectionSystem.load(load_unsupervised=False)
+        degraded.supervised = None
+        monkeypatch.setattr(app_module, "system", degraded)
+        client = TestClient(app_module.app)
+
+        assert client.get("/health").status_code == 503
+        assert client.get("/api/health").status_code == 503
 
 
 class TestApiBoundariesTier2:

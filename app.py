@@ -9,9 +9,12 @@ BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+import threading
+import time
 import uvicorn
-from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from src.pipeline import ClickbaitDetectionSystem
@@ -52,7 +55,57 @@ class PredictBatchRequest(BaseModel):
 class PredictRequest(BaseModel):
     headline: Optional[str] = None
     headlines: Optional[List[str]] = None
+    data: Optional[List[str]] = None  # legacy alias for headlines
     model: str = "kmeans"
+
+
+MAX_BATCH_SIZE = 100
+VALID_MODELS = {"kmeans", "hdbscan"}
+
+# Tiny per-IP rate limit: the endpoint is public with no auth, so one script
+# could burn the free hosting quota. Local dev and tests bypass it below.
+_RATE_LIMIT_MAX_REQUESTS = 60
+_RATE_LIMIT_WINDOW_SECONDS = 60.0
+_RATE_LIMIT_BYPASS_HOSTS = {"testclient", "127.0.0.1", "::1", "localhost"}
+_rate_buckets: Dict[str, List[float]] = {}
+_rate_lock = threading.Lock()
+
+
+@app.middleware("http")
+async def _rate_limit_middleware(request: Request, call_next):
+    if request.url.path not in ("/health", "/api/health"):
+        host = request.client.host if request.client else "unknown"
+        if host not in _RATE_LIMIT_BYPASS_HOSTS:
+            now = time.monotonic()
+            with _rate_lock:
+                if len(_rate_buckets) > 5000:  # drop stale entries so memory does not grow
+                    _rate_buckets = {h: ts for h, ts in _rate_buckets.items() if any(now - t < _RATE_LIMIT_WINDOW_SECONDS for t in ts)}
+                hits = [t for t in _rate_buckets.get(host, []) if now - t < _RATE_LIMIT_WINDOW_SECONDS]
+                if len(hits) >= _RATE_LIMIT_MAX_REQUESTS:
+                    return JSONResponse({"detail": "Rate limit exceeded. Try again later."}, status_code=429)
+                hits.append(now)
+                _rate_buckets[host] = hits
+    return await call_next(request)
+
+
+def _require_model(model: str) -> str:
+    if model not in VALID_MODELS:
+        raise HTTPException(status_code=422, detail=f"model must be one of {sorted(VALID_MODELS)}")
+    return model
+
+
+def _check_batch_size(headlines: List[str]) -> None:
+    if len(headlines) > MAX_BATCH_SIZE:
+        raise HTTPException(status_code=413, detail=f"Batch too large: max {MAX_BATCH_SIZE} headlines")
+
+
+def _health_payload() -> Dict[str, Any]:
+    return {
+        "status": "healthy" if getattr(system, "supervised", None) is not None else "degraded",
+        "supervised_loaded": getattr(system, "supervised", None) is not None,
+        "unsupervised_loaded": getattr(system, "unsupervised", None) is not None,
+        "hdbscan_loaded": getattr(system, "hdbscan", None) is not None,
+    }
 
 
 def format_result(res: Dict[str, Any]) -> Dict[str, Any]:
@@ -68,8 +121,12 @@ def format_result(res: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 @app.get("/health")
+@app.get("/api/health")
 def health_check():
-    return {"status": "healthy"}
+    payload = _health_payload()
+    if not payload["supervised_loaded"]:
+        raise HTTPException(status_code=503, detail="models not loaded")
+    return payload
 
 @app.post("/predict")
 def predict_single(
@@ -79,25 +136,35 @@ def predict_single(
 ):
     # Supports both query params (extension) and a JSON body (tests/contract).
     if headline is None and body is not None:
+        if body.headline is None and body.headlines is not None:
+            _require_model(body.model)
+            _check_batch_size(body.headlines)
+            results = [format_result(r) for r in system.predict_many(body.headlines, categorizer=body.model)]
+            return {"results": results, "total": len(results)}
         headline = body.headline
         model = body.model
     if headline is None:
         raise HTTPException(status_code=422, detail="headline is required")
-    return format_result(system.predict(headline, categorizer=model))
+    return format_result(system.predict(headline, categorizer=_require_model(model)))
 
 @app.post("/api/predict")
 def api_predict(req: PredictRequest):
-    if req.headlines:
-        results = [format_result(r) for r in system.predict_many(req.headlines, categorizer=req.model)]
-        return {"results": results}
+    _require_model(req.model)
+    headlines = req.headlines if req.headlines is not None else req.data
+    if headlines is not None:
+        _check_batch_size(headlines)
+        results = [format_result(r) for r in system.predict_many(headlines, categorizer=req.model)]
+        return {"results": results, "total": len(results)}
     if req.headline is not None:
         return format_result(system.predict(req.headline, categorizer=req.model))
     raise HTTPException(status_code=422, detail="headline or headlines is required")
 
 @app.post("/predict_batch")
 def predict_batch(req: PredictBatchRequest):
+    _require_model(req.model)
+    _check_batch_size(req.headlines)
     results = [format_result(r) for r in system.predict_many(req.headlines, categorizer=req.model)]
-    return {"results": results}
+    return {"results": results, "total": len(results)}
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))

@@ -713,10 +713,16 @@ class ClickbaitDetectionSystem:
         key = (categorizer, headline)
         cached = self._cache_get(key)
         if cached is not None:
-            return cached
+            if cat is None and cached.get("is_clickbait") and cached.get("bait_type") is not None:
+                cached = None  # cached before degradation; recompute below
+            else:
+                return cached
 
         result = self._predict_one(headline, cat)
-        self._cache_set(key, result)
+        if cat is not None or not result["is_clickbait"]:
+            # Never cache clickbait-without-category: the null bait_type
+            # reflects transient degraded state and would poison later reads.
+            self._cache_set(key, result)
         return result
 
     def predict_many(self, headlines: Sequence[str], categorizer: str = "kmeans") -> List[Dict[str, Any]]:
@@ -739,7 +745,10 @@ class ClickbaitDetectionSystem:
                 continue
             cached = self._cache_get((categorizer, h))
             if cached is not None:
-                results[i] = cached
+                if cat is None and cached.get("is_clickbait") and cached.get("bait_type") is not None:
+                    missing.append((i, h))  # cached before degradation; recompute
+                else:
+                    results[i] = cached
             else:
                 missing.append((i, h))
 
@@ -776,6 +785,7 @@ class ClickbaitDetectionSystem:
                         results[i]["bait_type"] = "Sensacionalismo Geral"
 
             for i, h in missing:
-                self._cache_set((categorizer, h), results[i])
+                if cat is not None or not results[i]["is_clickbait"]:
+                    self._cache_set((categorizer, h), results[i])
 
         return [r for r in results if r is not None]

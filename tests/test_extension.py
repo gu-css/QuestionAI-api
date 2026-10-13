@@ -193,7 +193,8 @@ class TestExtensionPopupAndStylesTier1:
     """Tier 1: Extension Popup and CSS styles."""
 
     def test_extension_css_rules_present(self):
-        """Verifies content.css contains styling for .clickbait-detected and .clickbait-badge."""
+        """Verifies content.css contains styling for the badge classes the
+        content script actually injects (.clickbait-detected and friends)."""
         if not has_m3_extension_files():
             pytest.skip("M3 pending: Chrome extension files not yet generated.")
 
@@ -202,7 +203,7 @@ class TestExtensionPopupAndStylesTier1:
 
         css_content = css_path.read_text(encoding="utf-8")
         assert ".clickbait-detected" in css_content, "content.css must define .clickbait-detected rule."
-        assert ".clickbait-badge" in css_content, "content.css must define .clickbait-badge rule."
+        assert ".clickbait-image-blurred" in css_content, "content.css must define .clickbait-image-blurred rule."
 
     def test_popup_ui_files_presence(self):
         """Verifies extension popup contains HTML, JS, and CSS for user controls."""

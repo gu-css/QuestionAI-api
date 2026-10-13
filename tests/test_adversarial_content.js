@@ -10,7 +10,10 @@ const { JSDOM } = require('jsdom');
 const fs = require('fs');
 const path = require('path');
 
-const CONTENT_SCRIPT_PATH = path.resolve(__dirname, '../extension/content/content.js');
+// Repos are split: extension/ is a sibling of api/, old monorepo layout as fallback.
+const _LOCAL_CONTENT = path.resolve(__dirname, '../extension/content/content.js');
+const _SIBLING_CONTENT = path.resolve(__dirname, '../../extension/content/content.js');
+const CONTENT_SCRIPT_PATH = fs.existsSync(_SIBLING_CONTENT) ? _SIBLING_CONTENT : _LOCAL_CONTENT;
 const contentScriptCode = fs.readFileSync(CONTENT_SCRIPT_PATH, 'utf8');
 
 // Test utilities

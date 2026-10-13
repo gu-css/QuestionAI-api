@@ -47,7 +47,7 @@ if PROJECT_ROOT not in sys.path:
 
 from fastapi.testclient import TestClient
 import app as app_module
-from app import app, system, process_headline, MODELS_DIR
+from app import app
 from src.pipeline import ClickbaitDetectionSystem
 
 

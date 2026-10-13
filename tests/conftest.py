@@ -13,8 +13,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# Project directories. models/scripts/app live under api/ (PROJECT_ROOT),
-# but extension/, docs/ and hf_space/ live at the repo root (one level up).
+# Project directories. models/scripts/app live under api/ (PROJECT_ROOT).
+# extension/ lives at the repo root (one level up); docs/ and hf_space/
+# do not exist since the repos were split, so those checks skip by design.
 REPO_ROOT = PROJECT_ROOT.parent
 MODELS_DIR = PROJECT_ROOT / "models"
 EXTENSION_DIR = REPO_ROOT / "extension"

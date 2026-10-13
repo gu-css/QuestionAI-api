@@ -28,7 +28,10 @@ from pathlib import Path
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-EXTENSION_DIR = PROJECT_ROOT / "extension"
+# Repos are split: extension/ is a sibling of api/, with the old monorepo
+# layout (extension/ under api/) kept as fallback.
+_EXTENSION_CANDIDATES = [PROJECT_ROOT.parent / "extension", PROJECT_ROOT / "extension"]
+EXTENSION_DIR = next((p for p in _EXTENSION_CANDIDATES if p.is_dir()), _EXTENSION_CANDIDATES[0])
 CONTENT_JS_PATH = EXTENSION_DIR / "content" / "content.js"
 
 
@@ -74,6 +77,15 @@ class TestContentScriptAdversarialEmpiricalNode:
         """Executes the standalone adversarial test harness and inspects outcomes."""
         harness_path = PROJECT_ROOT / "tests" / "test_adversarial_content.js"
         assert harness_path.exists(), f"Adversarial harness missing at {harness_path}"
+
+        # The harness needs the jsdom dev dependency; skip (don't fail) without it.
+        dep_check = subprocess.run(
+            ["node", "-e", "require('jsdom')"],
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+        )
+        if dep_check.returncode != 0:
+            pytest.skip("jsdom not installed; cannot run content-script DOM harness.")
 
         result = subprocess.run(
             ["node", str(harness_path)],

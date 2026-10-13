@@ -9,7 +9,10 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
-const EXTENSION_DIR = path.join(ROOT_DIR, 'extension');
+// Repos are split: extension/ is a sibling of api/, old monorepo layout as fallback.
+const _LOCAL_EXT = path.join(ROOT_DIR, 'extension');
+const _SIBLING_EXT = path.join(ROOT_DIR, '..', 'extension');
+const EXTENSION_DIR = fs.existsSync(_SIBLING_EXT) ? _SIBLING_EXT : _LOCAL_EXT;
 const MANIFEST_PATH = path.join(EXTENSION_DIR, 'manifest.json');
 
 function runExtensionContractTests() {
