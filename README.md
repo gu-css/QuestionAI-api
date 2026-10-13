@@ -1,16 +1,18 @@
 # QuestionAI API
 
+*Idiomas: **Português** · [English](README-en.md)*
+
 <p align="center">
   <img src="assets/logo.svg" alt="QuestionAI — um produto plano b" width="420" />
 </p>
 
-Clickbait detection API (FastAPI). Receives Portuguese news headlines and
-returns whether each one is clickbait, with a probability and the
-attention-grabbing tactic it uses. Production runs K-Means only.
+API de detecção de clickbait (FastAPI). Recebe manchetes de notícias em
+português e responde se cada uma é clickbait, com probabilidade e a tática
+de atenção usada. Produção roda só K-Means.
 
-## What it does
+## O que faz
 
-Send a headline, get back a verdict:
+Envie uma manchete, receba o veredito:
 
 ```json
 POST /api/predict  { "headline": "Você não vai acreditar no que aconteceu com esse famoso!" }
@@ -27,104 +29,104 @@ POST /api/predict  { "headline": "Você não vai acreditar no que aconteceu com 
 }
 ```
 
-## How it works
+## Como funciona
 
-Two independent ML stages run in sequence. The classifier decides
-*clickbait or not*; only clickbait goes to the categorizer, which names
-the tactic (*bait type*).
+Dois estágios de ML independentes rodam em sequência. O classificador
+decide *clickbait ou não*; só o que for clickbait passa ao categorizador,
+que nomeia a tática (*bait type*).
 
 ```mermaid
 flowchart TD
-    A["Headline (raw text)"] --> B["Normalize + clean\n(lowercase, strip HTML/URLs,\nremove neutral stopwords)"]
-    B --> C["Features\nTF-IDF 5k bigrams + 6 stylometric\n(! count, ? present, length,\ntrigger words, UPPER ratio, has number)"]
-    C --> D["Supervised classifier\nCalibrated Hybrid SVM\nLinearSVC + sigmoid calibration"]
+    A["Manchete (texto puro)"] --> B["Normaliza + limpa\n(minúsculas, tira HTML/URLs,\nremove stopwords neutras)"]
+    B --> C["Features\nTF-IDF 5k bigramas + 6 estilométricas\n(qtd !, tem ?, tamanho,\ntermos sensacionalistas,\nrazão MAIÚSCULAS, tem número)"]
+    C --> D["Classificador supervisionado\nSVM Híbrida Calibrada\nLinearSVC + calibração sigmoide"]
     D --> E{"probability >= 0.5?"}
-    E -- No --> F["not_clickbait\nbait_type = null"]
-    E -- Yes --> G["Unsupervised categorizer\nTF-IDF → SVD 40d → L2 → K-Means k=6"]
-    G --> H["clickbait + bait_type\n(e.g. sports rivalry, celebrity gossip)"]
+    E -- Não --> F["not_clickbait\nbait_type = null"]
+    E -- Sim --> G["Categorizador não supervisionado\nTF-IDF → SVD 40d → L2 → K-Means k=6"]
+    G --> H["clickbait + bait_type\n(ex. rivalidade esportiva, fofoca de famosos)"]
 ```
 
-Empty or whitespace-only input short-circuits to `not_clickbait` with
-probability `0.0` — it never reaches the models. Results are memoized in
-a per-process thread-safe LRU cache (2048 entries).
+Entrada vazia ou só espaços retorna `not_clickbait` com probabilidade
+`0.0` direto — nem chega aos modelos. Resultados ficam num cache LRU
+por processo (2048 entradas, thread-safe).
 
-### Where it sits in the system
+### Onde ela fica no sistema
 
 ```mermaid
 flowchart LR
-    subgraph Browser["Browser (extension)"]
-        CS["Content script\nscans headlines"]
-        SW["Service worker\ncache + threshold"]
+    subgraph Navegador["Navegador (extensão)"]
+        CS["Content script\nvarre manchetes"]
+        SW["Service worker\ncache + limiar"]
     end
-    subgraph Render["Render (this API)"]
+    subgraph Render["Render (esta API)"]
         API["FastAPI\napp.py"]
         PIPE["Pipeline\nsrc/pipeline.py"]
-        MODELS[("Models\nsupervised + kmeans\n.joblib")]
+        MODELS[("Modelos\nsupervisionado + kmeans\n.joblib")]
     end
     CS --> SW --> API --> PIPE --> MODELS
 ```
 
 ## Endpoints
 
-| Method & path      | Body / params | Response |
-|--------------------|---------------|----------|
-| `GET /health`, `GET /api/health` | — | `status`, `supervised_loaded`, `unsupervised_loaded`, `hdbscan_loaded` (503 when models missing) |
-| `POST /predict`    | `?headline=...&model=kmeans`, or JSON `PredictRequest` (single or batch) | single result, or `{results, total}` for batch |
+| Método e rota | Corpo / params | Resposta |
+|---------------|----------------|----------|
+| `GET /health`, `GET /api/health` | — | `status`, `supervised_loaded`, `unsupervised_loaded`, `hdbscan_loaded` (503 sem modelos) |
+| `POST /predict` | `?headline=...&model=kmeans`, ou JSON `PredictRequest` (único ou lote) | resultado único, ou `{results, total}` em lote |
 | `POST /predict_batch` | `{headlines: [...], model}` | `{results, total}` |
-| `POST /api/predict` | `{headline}` or `{headlines}` (`data` accepted as legacy alias) | single result, or `{results, total}` |
+| `POST /api/predict` | `{headline}` ou `{headlines}` (`data` aceito como alias legado) | resultado único, ou `{results, total}` |
 
-`model` is `"kmeans"` (default) or `"hdbscan"`; anything else is 422.
-Batch responses always carry `total`.
+`model` é `"kmeans"` (padrão) ou `"hdbscan"`; qualquer outro valor dá 422.
+Respostas em lote sempre trazem `total`.
 
-### Response schema
+### Schema de resposta
 
-| Field | Meaning |
-|-------|---------|
-| `headline` | Echo of the input |
+| Campo | Significado |
+|-------|-------------|
+| `headline` | Eco da entrada |
 | `is_clickbait` | `probability >= 0.5` |
-| `clickbait_status` | `"clickbait"` or `"not_clickbait"` |
-| `probability` | Calibrated P(clickbait), 0–1 |
+| `clickbait_status` | `"clickbait"` ou `"not_clickbait"` |
+| `probability` | P(clickbait) calibrada, 0–1 |
 | `confidence` | `\|prob − 0.5\| × 2`, 0–1 |
-| `bait_type` | Tactic name, or `null` when not clickbait (or categorizer unavailable) |
+| `bait_type` | Nome da tática, ou `null` quando não é clickbait (ou sem categorizador) |
 
-### Built-in guards
+### Proteções embutidas
 
-- **Batch cap:** max 100 headlines per request (413 over) — one giant request can't OOM the small hosting box.
-- **Rate limit:** 60 requests/min per IP, in-memory, no dependency. Localhost and test clients bypass it.
-- **Honest health:** `/health` returns 503 when the supervised model isn't loaded, so a broken deploy never looks healthy.
+- **Limite de lote:** máx. 100 manchetes por request (413 acima) — um request gigante não derruba a hospedagem pequena.
+- **Rate limit:** 60 requests/min por IP, em memória, sem dependência. Localhost e testes passam direto.
+- **Health honesto:** `/health` retorna 503 sem o modelo supervisionado — deploy quebrado nunca parece saudável.
 
-## Project structure
+## Estrutura do projeto
 
 ```text
-app.py                 # Routes, validation, rate limit, health (entry point)
+app.py                 # Rotas, validação, rate limit, health (entry point)
 src/
-  pipeline.py          # SupervisedPredictor, K-Means/HDBSCAN categorizers, orchestration + cache
-  features.py          # normalize_text, clean_text, 6 stylometric features, stopword lists
+  pipeline.py          # SupervisedPredictor, categorizadores K-Means/HDBSCAN, orquestração + cache
+  features.py          # normalize_text, clean_text, 6 features estilométricas, stopwords
 models/
-  supervised_model.joblib      # Calibrated Hybrid SVM (~460 KB)
-  unsupervised_model.joblib    # Spherical K-Means (~1.2 MB)
-  cluster_topics.json          # Cluster id → tactic name
-  metadata.json                # Training metrics and config
+  supervised_model.joblib      # SVM Híbrida Calibrada (~460 KB)
+  unsupervised_model.joblib    # K-Means esférico (~1.2 MB)
+  cluster_topics.json          # cluster id → nome da tática
+  metadata.json                # Métricas de treino e config
 data/
-  detector-clickbait-br-processed.csv  # Training data (~9.5k rows)
+  detector-clickbait-br-processed.csv  # Dados de treino (~9.5k linhas)
 scripts/
-  train.py             # Retrain supervised + K-Means from data/
-  train_hdbscan.py     # Train the HDBSCAN categorizer (local only)
-  verify_models.py     # Sanity-check saved artifacts
-  stress_test_m2.py    # Manual load/endpoint stress script
-  build_docs.py / generate_icons.py / heavy_stress_test.py  # One-off utilities
-tests/                 # pytest suite (312 tests): API, models, adversarial, extension harnesses
-assets/                # Brand: logo.svg (full lockup), simbolo.svg (Q mark)
+  train.py             # Retreina supervisionado + K-Means a partir de data/
+  train_hdbscan.py     # Treina o categorizador HDBSCAN (só local)
+  verify_models.py     # Checa os artefatos salvos
+  stress_test_m2.py    # Stress manual de endpoints/carga
+  build_docs.py / generate_icons.py / heavy_stress_test.py  # Utilitários pontuais
+tests/                 # Suíte pytest (312 testes): API, modelos, adversarial, harnesses da extensão
+assets/                # Marca: logo.svg (lockup completo), simbolo.svg (Q)
 ```
 
-## Run locally
+## Rodar local
 
 ```sh
 pip install -r requirements.txt
-python app.py  # PORT=8000, WORKERS=1 (env-overridable)
+python app.py  # PORT=8000, WORKERS=1 (via env)
 ```
 
-Smoke test:
+Teste rápido:
 
 ```sh
 curl -X POST localhost:8000/api/predict \
@@ -132,49 +134,50 @@ curl -X POST localhost:8000/api/predict \
   -d '{"headline": "Você não vai acreditar no que aconteceu!"}'
 ```
 
-## Tests
+## Testes
 
 ```sh
 python -m pytest tests/ -q
 ```
 
-312 tests covering endpoints, model quality, adversarial inputs
-(XSS/SQLi/emoji/null bytes/huge payloads), concurrency (30 threads),
-degraded states (missing unsupervised model), and the browser-extension
-JS harnesses (service-worker network failures, content-script DOM cases).
+(A suíte de testes é local e fica fora do git.)
+312 testes: endpoints, qualidade do modelo, entradas adversariais
+(XSS/SQLi/emoji/null bytes/payloads gigantes), concorrência (30 threads),
+estados degradados (sem modelo não supervisionado) e harnesses JS da
+extensão (falhas de rede do service worker, casos DOM do content script).
 
-## Retraining
+## Retreinar
 
 ```sh
-python scripts/train.py              # supervised + K-Means → models/
-python scripts/verify_models.py      # check the artifacts
+python scripts/train.py              # supervisionado + K-Means → models/
+python scripts/verify_models.py      # checa os artefatos
 ```
 
-## HDBSCAN (local only)
+## HDBSCAN (só local)
 
-The HDBSCAN categorizer (semantic embeddings + UMAP + HDBSCAN, ~441 MB)
-is gitignored and never deployed: its deps live in
-`requirements-hdbscan.txt` and production serves K-Means.
+O categorizador HDBSCAN (embeddings semânticos + UMAP + HDBSCAN, ~441 MB)
+é gitignored e nunca vai ao deploy: as deps estão em
+`requirements-hdbscan.txt` e a produção serve K-Means.
 
 ```sh
 pip install -r requirements-hdbscan.txt
 python scripts/train_hdbscan.py      # → models/unsupervised_hdbscan.joblib
 ```
 
-Or download it from the
-[modelos-hdbscan-v1 release](https://github.com/gu-css/QuestionAI-api/releases/tag/modelos-hdbscan-v1)
-into `models/`. When present, clients can request it with `model=hdbscan`;
-noise points (`-1`) map to `bait_type: null`.
+Ou baixe da
+[release modelos-hdbscan-v1](https://github.com/gu-css/QuestionAI-api/releases/tag/modelos-hdbscan-v1)
+para dentro de `models/`. Quando presente, clientes pedem com
+`model=hdbscan`; pontos de ruído (`-1`) viram `bait_type: null`.
 
 ## Model card
 
-From `models/metadata.json`: Calibrated Hybrid SVM (Approach C),
-trained on 8,456 headlines, tested on 934 — accuracy 0.9893,
-precision/recall/F1 0.9901, ROC AUC 0.9995, decision threshold 0.5.
-K-Means categorizer: TF-IDF → SVD 40 dims → L2 → 6 clusters.
+De `models/metadata.json`: SVM Híbrida Calibrada (Approach C), treinada
+em 8.456 manchetes, testada em 934 — acurácia 0.9893,
+precisão/recall/F1 0.9901, ROC AUC 0.9995, limiar 0.5.
+Categorizador K-Means: TF-IDF → SVD 40 dims → L2 → 6 clusters.
 
 ## Deploy (Render)
 
-Blueprint in `render.yaml`: `pip install -r requirements.txt`,
-start with `python app.py`, Python 3.10.12. Single web service
+Blueprint em `render.yaml`: `pip install -r requirements.txt`,
+sobe com `python app.py`, Python 3.10.12. Serviço web único
 `clickbait-api`.
