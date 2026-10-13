@@ -11,3 +11,6 @@ models/cluster_topics_hdbscan.json
 
 # Test suite lives outside git (local only)
 tests/
+
+# Training data (large CSV; regenerate from original source if needed)
+data/detector-clickbait-br-processed.csv
