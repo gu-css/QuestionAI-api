@@ -1,0 +1,11 @@
+# HDBSCAN is local-only (model is 441 MB and gitignored; its deps live in
+# requirements-hdbscan.txt, not installed here). Production runs K-Means only.
+services:
+  - type: web
+    name: clickbait-api
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python app.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
