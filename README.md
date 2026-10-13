@@ -22,7 +22,9 @@ Response: `headline, is_clickbait, clickbait_status, probability, confidence, ba
 
 The HDBSCAN model (~441 MB) is gitignored. Generate it with
 `scripts/train_hdbscan.py` (deps in `requirements-hdbscan.txt`),
-or download it from the GitHub Release assets.
+or download it from the
+[modelos-hdbscan-v1 release](https://github.com/gu-css/QuestionAI-api/releases/tag/modelos-hdbscan-v1)
+into `models/`.
 
 ## Deploy (Render)
 
